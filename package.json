@@ -1,0 +1,13 @@
+{
+  "name": "private-cloud-storage",
+  "private": true,
+  "workspaces": [
+    "apps/web",
+    "packages/sdk"
+  ],
+  "scripts": {
+    "test": "npm -w @private-cloud/sdk test",
+    "dev:web": "npm -w @private-cloud/web run dev",
+    "build": "npm -w @private-cloud/sdk run build && npm -w @private-cloud/web run build"
+  }
+}

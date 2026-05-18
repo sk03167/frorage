@@ -1,0 +1,282 @@
+openapi: 3.1.0
+info:
+  title: Private Cloud Storage API
+  version: 0.1.0
+  description: API for opaque encrypted file metadata, storage upload/download sessions, billing usage, and account recovery.
+servers:
+  - url: http://localhost:8080
+paths:
+  /v1/auth/signup:
+    post:
+      summary: Create an account with client-wrapped encryption keys.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SignupRequest"
+      responses:
+        "201":
+          description: Account created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+  /v1/auth/login:
+    post:
+      summary: Authenticate and return wrapped account key material.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LoginRequest"
+      responses:
+        "200":
+          description: Authenticated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthResponse"
+  /v1/uploads/init:
+    post:
+      security:
+        - bearerAuth: []
+      summary: Create a direct encrypted-object upload session.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UploadInitRequest"
+      responses:
+        "201":
+          description: Upload session created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UploadInitResponse"
+  /v1/uploads/{uploadId}/commit:
+    post:
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: uploadId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "201":
+          description: File committed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileRecord"
+  /v1/files:
+    get:
+      security:
+        - bearerAuth: []
+      summary: List encrypted file and folder records owned by the user.
+      responses:
+        "200":
+          description: File list.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  files:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/FileRecord"
+    post:
+      security:
+        - bearerAuth: []
+      summary: Create an encrypted folder metadata record.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateFolderRequest"
+      responses:
+        "201":
+          description: Folder created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileRecord"
+  /v1/files/{fileId}:
+    patch:
+      security:
+        - bearerAuth: []
+      summary: Replace encrypted metadata or parent for rename/move.
+      parameters:
+        - name: fileId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateFileRequest"
+      responses:
+        "200":
+          description: Updated record.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FileRecord"
+    delete:
+      security:
+        - bearerAuth: []
+      summary: Delete an encrypted file or folder record.
+      parameters:
+        - name: fileId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted.
+  /v1/files/{fileId}/download:
+    post:
+      security:
+        - bearerAuth: []
+      summary: Authorize a direct encrypted-object download.
+      parameters:
+        - name: fileId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Download URL.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  downloadUrl:
+                    type: string
+                  expiresAt:
+                    type: string
+                    format: date-time
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+  schemas:
+    SignupRequest:
+      type: object
+      required: [email, passwordVerifier, keyBundle]
+      properties:
+        email:
+          type: string
+          format: email
+        passwordVerifier:
+          type: string
+          description: Client-derived auth verifier; not the user's plaintext password.
+        keyBundle:
+          $ref: "#/components/schemas/KeyBundle"
+    LoginRequest:
+      type: object
+      required: [email, passwordVerifier]
+      properties:
+        email:
+          type: string
+        passwordVerifier:
+          type: string
+    AuthResponse:
+      type: object
+      required: [token, user, keyBundle]
+      properties:
+        token:
+          type: string
+        user:
+          type: object
+          properties:
+            id:
+              type: string
+            email:
+              type: string
+        keyBundle:
+          $ref: "#/components/schemas/KeyBundle"
+    KeyBundle:
+      type: object
+      required: [passwordWrappedMasterKey, passwordKdfSalt, recoveryPhraseWrappedMasterKey, recoveryFileWrappedMasterKey]
+      properties:
+        passwordWrappedMasterKey:
+          type: string
+        passwordKdfSalt:
+          type: string
+        recoveryPhraseWrappedMasterKey:
+          type: string
+        recoveryFileWrappedMasterKey:
+          type: string
+    UploadInitRequest:
+      type: object
+      required: [encryptedMetadata, ciphertextSize]
+      properties:
+        parentId:
+          type: string
+          nullable: true
+        encryptedMetadata:
+          type: string
+        ciphertextSize:
+          type: integer
+          minimum: 0
+    UploadInitResponse:
+      type: object
+      properties:
+        uploadId:
+          type: string
+        objectKey:
+          type: string
+        uploadUrl:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+    CreateFolderRequest:
+      type: object
+      required: [encryptedMetadata]
+      properties:
+        parentId:
+          type: string
+          nullable: true
+        encryptedMetadata:
+          type: string
+    UpdateFileRequest:
+      type: object
+      properties:
+        parentId:
+          type: string
+          nullable: true
+        encryptedMetadata:
+          type: string
+    FileRecord:
+      type: object
+      properties:
+        id:
+          type: string
+        kind:
+          type: string
+          enum: [file, folder]
+        parentId:
+          type: string
+          nullable: true
+        encryptedMetadata:
+          type: string
+        ciphertextSize:
+          type: integer
+        objectKey:
+          type: string
+          nullable: true
