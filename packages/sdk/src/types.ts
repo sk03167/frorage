@@ -12,7 +12,7 @@ export type RecoveryKit = {
 
 export type RecoveryFile = {
   version: 1;
-  kind: "private-cloud-recovery-file";
+  kind: "frorage-recovery-file";
   secret: string;
   createdAt: string;
 };

@@ -9,7 +9,7 @@ import {
   unlockWithPassword,
   type FileRecord,
   type RecoveryKit,
-} from "@private-cloud/sdk";
+} from "@frorage/sdk";
 import "./styles.css";
 
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8080";
@@ -118,7 +118,7 @@ function App() {
             <h2>Recovery kit</h2>
             <p>{recoveryKit.phrase}</p>
             <a
-              download="private-cloud-recovery.json"
+              download="frorage-recovery.json"
               href={`data:application/json,${encodeURIComponent(JSON.stringify(recoveryKit.file, null, 2))}`}
             >
               Download recovery file

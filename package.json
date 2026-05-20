@@ -1,13 +1,16 @@
 {
-  "name": "private-cloud-storage",
+  "name": "frorage",
   "private": true,
   "workspaces": [
     "apps/web",
     "packages/sdk"
   ],
   "scripts": {
-    "test": "npm -w @private-cloud/sdk test",
-    "dev:web": "npm -w @private-cloud/web run dev",
-    "build": "npm -w @private-cloud/sdk run build && npm -w @private-cloud/web run build"
+    "test": "npm -w @frorage/sdk test",
+    "dev:web": "npm -w @frorage/web run dev",
+    "build": "npm -w @frorage/sdk run build && npm -w @frorage/web run build"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1"
   }
 }

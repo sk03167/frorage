@@ -13,7 +13,7 @@ export async function createAccountCrypto(email: string, password: string): Prom
   const recoveryFileSecret = randomBytes(32);
   const recoveryFile: RecoveryFile = {
     version: 1,
-    kind: "private-cloud-recovery-file",
+    kind: "frorage-recovery-file",
     secret: bytesToBase64Url(recoveryFileSecret),
     createdAt: new Date().toISOString(),
   };
@@ -45,7 +45,7 @@ export async function unlockWithRecoveryPhrase(phrase: string, bundle: KeyBundle
 }
 
 export async function unlockWithRecoveryFile(file: RecoveryFile, bundle: KeyBundle): Promise<CryptoKey> {
-  if (file.version !== 1 || file.kind !== "private-cloud-recovery-file") {
+  if (file.version !== 1 || file.kind !== "frorage-recovery-file") {
     throw new Error("Invalid recovery file");
   }
   return unwrapKey(bundle.recoveryFileWrappedMasterKey, await importRawAesKey(base64UrlToBytes(file.secret)));
@@ -77,19 +77,23 @@ export async function decryptMetadata(masterKey: CryptoKey, encryptedMetadata: s
 
 export async function encryptBytes(masterKey: CryptoKey, plaintext: Uint8Array): Promise<Uint8Array> {
   const iv = randomBytes(AES_GCM_IV_BYTES);
-  const ciphertext = new Uint8Array(await crypto.subtle.encrypt({ name: "AES-GCM", iv }, masterKey, plaintext));
+  const ciphertext = new Uint8Array(
+    await crypto.subtle.encrypt({ name: "AES-GCM", iv: bytesToArrayBuffer(iv) }, masterKey, bytesToArrayBuffer(plaintext)),
+  );
   return concatBytes(iv, ciphertext);
 }
 
 export async function decryptBytes(masterKey: CryptoKey, payload: Uint8Array): Promise<Uint8Array> {
   const iv = payload.slice(0, AES_GCM_IV_BYTES);
   const ciphertext = payload.slice(AES_GCM_IV_BYTES);
-  return new Uint8Array(await crypto.subtle.decrypt({ name: "AES-GCM", iv }, masterKey, ciphertext));
+  return new Uint8Array(
+    await crypto.subtle.decrypt({ name: "AES-GCM", iv: bytesToArrayBuffer(iv) }, masterKey, bytesToArrayBuffer(ciphertext)),
+  );
 }
 
 export async function passwordVerifier(email: string, password: string): Promise<string> {
   const material = await deriveBits(password, utf8(`auth:${email.trim().toLowerCase()}`), 256);
-  const digest = await crypto.subtle.digest("SHA-256", concatBytes(utf8("auth-verifier:v1"), new Uint8Array(material)));
+  const digest = await crypto.subtle.digest("SHA-256", bytesToArrayBuffer(concatBytes(utf8("auth-verifier:v1"), new Uint8Array(material))));
   return bytesToBase64Url(new Uint8Array(digest));
 }
 
@@ -117,16 +121,22 @@ async function derivePasswordKey(password: string, salt: Uint8Array): Promise<Cr
 }
 
 async function deriveBits(password: string, salt: Uint8Array, length: number): Promise<ArrayBuffer> {
-  const keyMaterial = await crypto.subtle.importKey("raw", utf8(password), "PBKDF2", false, ["deriveBits"]);
+  const keyMaterial = await crypto.subtle.importKey("raw", bytesToArrayBuffer(utf8(password)), "PBKDF2", false, ["deriveBits"]);
   return crypto.subtle.deriveBits(
-    { name: "PBKDF2", salt, iterations: PASSWORD_KDF_ITERATIONS, hash: "SHA-256" },
+    { name: "PBKDF2", salt: bytesToArrayBuffer(salt), iterations: PASSWORD_KDF_ITERATIONS, hash: "SHA-256" },
     keyMaterial,
     length,
   );
 }
 
 async function importRawAesKey(raw: Uint8Array): Promise<CryptoKey> {
-  return crypto.subtle.importKey("raw", raw, { name: "AES-GCM", length: MASTER_KEY_BITS }, true, ["encrypt", "decrypt"]);
+  return crypto.subtle.importKey("raw", bytesToArrayBuffer(raw), { name: "AES-GCM", length: MASTER_KEY_BITS }, true, ["encrypt", "decrypt"]);
+}
+
+function bytesToArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy.buffer;
 }
 
 function randomBytes(size: number): Uint8Array {
@@ -137,9 +147,9 @@ function randomBytes(size: number): Uint8Array {
 
 function recoveryPhraseFromSecret(secret: Uint8Array): string {
   const token = bytesToBase64Url(secret);
-  return token.match(/.{1,4}/g)?.join("-") ?? token;
+  return token.match(/.{1,4}/g)?.join(" ") ?? token;
 }
 
 function secretFromRecoveryPhrase(phrase: string): Uint8Array {
-  return base64UrlToBytes(phrase.replaceAll("-", "").trim());
+  return base64UrlToBytes(phrase.replace(/\s/g, ""));
 }

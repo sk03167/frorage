@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"time"
 
-	"private-cloud-storage/apps/api/internal/objectstore"
+	"frorage/apps/api/internal/objectstore"
 )
 
 type Config struct {
@@ -27,7 +27,7 @@ func FromEnv() Config {
 		S3: objectstore.S3Config{
 			Endpoint:        env("S3_ENDPOINT", "http://localhost:9000"),
 			Region:          env("S3_REGION", "us-east-1"),
-			Bucket:          env("S3_BUCKET", "private-cloud"),
+			Bucket:          env("S3_BUCKET", "frorage"),
 			AccessKeyID:     env("S3_ACCESS_KEY_ID", "minioadmin"),
 			SecretAccessKey: env("S3_SECRET_ACCESS_KEY", "minioadmin"),
 			PathStyle:       envBool("S3_PATH_STYLE", true),

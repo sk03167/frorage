@@ -25,4 +25,4 @@ cd ../../packages/sdk && npm install && npm test
 cd ../../apps/web && npm install && npm run dev
 ```
 
-The API defaults are configured for MinIO at `http://localhost:9000` with bucket `private-cloud`.
+The API defaults are configured for MinIO at `http://localhost:9000` with bucket `frorage`.

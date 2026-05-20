@@ -79,7 +79,7 @@ export class PrivateCloudClient {
 
     const uploadResponse = await fetch(session.uploadUrl, {
       method: "PUT",
-      body: encrypted,
+      body: bytesToArrayBuffer(encrypted),
     });
     if (!uploadResponse.ok) {
       throw new Error(`Object upload failed: ${uploadResponse.status}`);
@@ -116,4 +116,10 @@ export class PrivateCloudClient {
     }
     return response.json() as Promise<T>;
   }
+}
+
+function bytesToArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy.buffer;
 }

@@ -3,7 +3,7 @@ package billing
 import (
 	"testing"
 
-	"private-cloud-storage/apps/api/internal/store"
+	"frorage/apps/api/internal/store"
 )
 
 func TestSummarizeAppliesMargin(t *testing.T) {

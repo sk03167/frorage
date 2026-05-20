@@ -5,10 +5,10 @@ import (
 	"net/http"
 	"time"
 
-	"private-cloud-storage/apps/api/internal/config"
-	"private-cloud-storage/apps/api/internal/httpapi"
-	"private-cloud-storage/apps/api/internal/objectstore"
-	"private-cloud-storage/apps/api/internal/store"
+	"frorage/apps/api/internal/config"
+	"frorage/apps/api/internal/httpapi"
+	"frorage/apps/api/internal/objectstore"
+	"frorage/apps/api/internal/store"
 )
 
 func main() {

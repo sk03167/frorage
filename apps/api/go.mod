@@ -1,3 +1,3 @@
-module private-cloud-storage/apps/api
+module frorage/apps/api
 
 go 1.22

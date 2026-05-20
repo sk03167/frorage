@@ -1,6 +1,6 @@
 package billing
 
-import "private-cloud-storage/apps/api/internal/store"
+import "frorage/apps/api/internal/store"
 
 const microsPerDollar = int64(1_000_000)
 

@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"private-cloud-storage/apps/api/internal/config"
-	"private-cloud-storage/apps/api/internal/objectstore"
-	"private-cloud-storage/apps/api/internal/store"
+	"frorage/apps/api/internal/config"
+	"frorage/apps/api/internal/objectstore"
+	"frorage/apps/api/internal/store"
 )
 
 func TestSignupLoginAndFolderFlowKeepsOpaqueMetadata(t *testing.T) {
@@ -22,7 +22,7 @@ func TestSignupLoginAndFolderFlowKeepsOpaqueMetadata(t *testing.T) {
 	}, store.NewMemoryRepository(), objectstore.NewS3Presigner(objectstore.S3Config{
 		Endpoint:        "http://localhost:9000",
 		Region:          "us-east-1",
-		Bucket:          "private-cloud",
+		Bucket:          "frorage",
 		AccessKeyID:     "access",
 		SecretAccessKey: "secret",
 		PathStyle:       true,

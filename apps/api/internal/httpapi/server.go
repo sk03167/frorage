@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
-	"private-cloud-storage/apps/api/internal/auth"
-	"private-cloud-storage/apps/api/internal/billing"
-	"private-cloud-storage/apps/api/internal/config"
-	"private-cloud-storage/apps/api/internal/objectstore"
-	"private-cloud-storage/apps/api/internal/store"
+	"frorage/apps/api/internal/auth"
+	"frorage/apps/api/internal/billing"
+	"frorage/apps/api/internal/config"
+	"frorage/apps/api/internal/objectstore"
+	"frorage/apps/api/internal/store"
 )
 
 type Server struct {
