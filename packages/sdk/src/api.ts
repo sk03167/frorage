@@ -61,12 +61,16 @@ export class PrivateCloudClient {
 
   async uploadFile(masterKey: CryptoKey, parentId: string | null, file: File): Promise<FileRecord> {
     const plaintext = new Uint8Array(await file.arrayBuffer());
-    const encrypted = await encryptBytes(masterKey, plaintext);
-    const encryptedMetadata = await encryptMetadata(masterKey, {
+    return this.uploadBytes(masterKey, parentId, {
       name: file.name,
       mimeType: file.type,
       lastModified: file.lastModified,
-    });
+    }, plaintext);
+  }
+
+  async uploadBytes(masterKey: CryptoKey, parentId: string | null, metadata: FileMetadata, plaintext: Uint8Array): Promise<FileRecord> {
+    const encrypted = await encryptBytes(masterKey, plaintext);
+    const encryptedMetadata = await encryptMetadata(masterKey, metadata);
 
     const session = await this.request<{ uploadId: string; uploadUrl: string }>("/v1/uploads/init", {
       method: "POST",
@@ -86,6 +90,22 @@ export class PrivateCloudClient {
     }
 
     return this.request<FileRecord>(`/v1/uploads/${session.uploadId}/commit`, { method: "POST" });
+  }
+
+  async moveFile(fileId: string, parentId: string | null): Promise<FileRecord> {
+    return this.request<FileRecord>(`/v1/files/${fileId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ parentId }),
+    });
+  }
+
+  async copyFile(masterKey: CryptoKey, file: FileRecord, parentId: string | null): Promise<FileRecord> {
+    const download = await this.downloadFile(masterKey, file);
+    return this.uploadBytes(masterKey, parentId, download.metadata, download.bytes);
+  }
+
+  async deleteFile(fileId: string): Promise<void> {
+    await this.request<void>(`/v1/files/${fileId}`, { method: "DELETE" });
   }
 
   async downloadFile(masterKey: CryptoKey, file: FileRecord): Promise<{ metadata: FileMetadata; bytes: Uint8Array }> {
@@ -114,7 +134,14 @@ export class PrivateCloudClient {
       const error = await response.json().catch(() => ({ error: response.statusText }));
       throw new Error(error.error ?? response.statusText);
     }
-    return response.json() as Promise<T>;
+    if (response.status === 204) {
+      return undefined as T;
+    }
+    const text = await response.text();
+    if (text === "") {
+      return undefined as T;
+    }
+    return JSON.parse(text) as T;
   }
 }
 
