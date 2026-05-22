@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { createRoot } from "react-dom/client";
 import {
   Copy,
@@ -35,10 +35,18 @@ type PendingOperation = {
   ids: string[];
 };
 
+type Notice = {
+  title: string;
+  message: string;
+};
+
 function App() {
   const client = useMemo(() => new PrivateCloudClient({ baseUrl: apiBaseUrl }), []);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [signupEmail, setSignupEmail] = useState("");
+  const [signupPassword, setSignupPassword] = useState("");
+  const [signupOpen, setSignupOpen] = useState(false);
   const [token, setToken] = useState<string | null>(null);
   const [masterKey, setMasterKey] = useState<CryptoKey | null>(null);
   const [recoveryKit, setRecoveryKit] = useState<RecoveryKit | null>(null);
@@ -50,6 +58,7 @@ function App() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [pendingOperation, setPendingOperation] = useState<PendingOperation | null>(null);
   const [draggedIds, setDraggedIds] = useState<string[]>([]);
+  const [notice, setNotice] = useState<Notice | null>(null);
   const [status, setStatus] = useState("Ready");
   const isUnlocked = Boolean(token && masterKey);
   const visibleFiles = files.filter((file) => (file.parentId ?? null) === currentFolderId);
@@ -58,6 +67,18 @@ function App() {
   const copyableSelection = selectedFiles.filter((file) => file.kind === "file");
   const currentFolderName = currentFolderId ? names[currentFolderId] ?? "Folder" : "Vault";
   const moveHereEnabled = pendingOperation?.mode !== "move" || canMoveTo(currentFolderId, pendingOperation.ids);
+
+  useEffect(() => {
+    if (!notice) return;
+    function closeOnEnter(event: KeyboardEvent) {
+      if (event.key === "Enter") {
+        event.preventDefault();
+        setNotice(null);
+      }
+    }
+    window.addEventListener("keydown", closeOnEnter);
+    return () => window.removeEventListener("keydown", closeOnEnter);
+  }, [notice]);
 
   async function refreshFiles(key = masterKey) {
     if (!key) return;
@@ -77,26 +98,51 @@ function App() {
   async function signup(event: React.FormEvent) {
     event.preventDefault();
     setStatus("Creating encrypted account...");
-    const account = await createAccountCrypto(email, password);
-    const response = await client.signup(email, account.passwordVerifier, account.keyBundle);
-    setToken(response.token);
-    setMasterKey(account.masterKey);
-    setRecoveryKit(account.recoveryKit);
-    setAccountMenuOpen(false);
-    setStatus("Account created. Save your recovery phrase and file before uploading important data.");
-    await refreshFiles(account.masterKey);
+    try {
+      const account = await createAccountCrypto(signupEmail, signupPassword);
+      const response = await client.signup(signupEmail, account.passwordVerifier, account.keyBundle);
+      setToken(response.token);
+      setMasterKey(account.masterKey);
+      setRecoveryKit(account.recoveryKit);
+      setAccountMenuOpen(false);
+      setSignupOpen(false);
+      setEmail(signupEmail);
+      setPassword("");
+      setSignupPassword("");
+      setStatus("Account created. Save your recovery phrase and file before uploading important data.");
+      setNotice({
+        title: "Account created",
+        message: "Your encrypted Frorage account is ready. Save your recovery phrase and recovery file before uploading important data.",
+      });
+      await refreshFiles(account.masterKey);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unable to create account.";
+      setStatus("Ready");
+      setNotice({
+        title: "Sign up failed",
+        message: message === "already exists" ? "An account already exists for this email. Please log in instead." : message,
+      });
+    }
   }
 
   async function loginWithPassword(event: React.FormEvent) {
     event.preventDefault();
     setStatus("Checking credentials...");
-    const response = await client.login(email, await passwordVerifier(email, password));
-    const key = await unlockWithPassword(password, response.keyBundle);
-    setToken(response.token);
-    setMasterKey(key);
-    setAccountMenuOpen(false);
-    setStatus("Vault unlocked.");
-    await refreshFiles(key);
+    try {
+      const response = await client.login(email, await passwordVerifier(email, password));
+      const key = await unlockWithPassword(password, response.keyBundle);
+      setToken(response.token);
+      setMasterKey(key);
+      setAccountMenuOpen(false);
+      setStatus("Vault unlocked.");
+      await refreshFiles(key);
+    } catch {
+      setStatus("Ready");
+      setNotice({
+        title: "Invalid credentials",
+        message: "We couldn't log you in with that email and password. Please check your credentials, or sign up if you're a new user.",
+      });
+    }
   }
 
   function logout() {
@@ -113,6 +159,12 @@ function App() {
     setPendingOperation(null);
     setDraggedIds([]);
     setStatus("Logged out.");
+  }
+
+  function openSignup() {
+    setSignupEmail(email);
+    setSignupPassword("");
+    setSignupOpen(true);
   }
 
   async function createFolder(event: React.FormEvent) {
@@ -293,6 +345,45 @@ function App() {
 
   return (
     <main className={`app ${isUnlocked ? "unlocked" : ""}`}>
+      {notice ? (
+        <div className="modal-backdrop" role="presentation">
+          <section aria-modal="true" className="modal" role="dialog" aria-labelledby="notice-title">
+            <h2 id="notice-title">{notice.title}</h2>
+            <p>{notice.message}</p>
+            <button type="button" onClick={() => setNotice(null)}>
+              OK
+            </button>
+          </section>
+        </div>
+      ) : null}
+
+      {signupOpen ? (
+        <div className="modal-backdrop" role="presentation">
+          <section aria-modal="true" className="modal" role="dialog" aria-labelledby="signup-title">
+            <h2 id="signup-title">Create account</h2>
+            <form className="modal-form" onSubmit={signup}>
+              <label>
+                Email
+                <input value={signupEmail} onChange={(event) => setSignupEmail(event.target.value)} type="email" required />
+              </label>
+              <label>
+                Password
+                <input value={signupPassword} onChange={(event) => setSignupPassword(event.target.value)} type="password" required />
+              </label>
+              <div className="modal-actions">
+                <button className="secondary-action" type="button" onClick={() => setSignupOpen(false)}>
+                  Cancel
+                </button>
+                <button type="submit">
+                  <KeyRound size={18} />
+                  Create account
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      ) : null}
+
       {isUnlocked && accountMenuOpen ? (
         <button className="drawer-backdrop" type="button" aria-label="Close account menu" onClick={() => setAccountMenuOpen(false)} />
       ) : null}
@@ -327,7 +418,7 @@ function App() {
               <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" required />
             </label>
             <div className="auth-actions">
-              <button type="button" onClick={signup}>
+              <button type="button" onClick={openSignup}>
                 <KeyRound size={18} />
                 Sign up
               </button>

@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="420" viewBox="0 0 1040 420" role="img" aria-labelledby="title desc">
+  <title id="title">Folder flow</title>
+  <desc id="desc">A flow showing that Frorage folders are encrypted API metadata, not MinIO folders.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#0d2f22"/>
+    </marker>
+    <style>
+      .bg { fill: #f7faf7; }
+      .card { fill: #ffffff; stroke: #b9c8c0; stroke-width: 2; rx: 14; }
+      .head { fill: #0d2f22; font: 700 22px Arial, sans-serif; }
+      .body { fill: #34463d; font: 17px Arial, sans-serif; }
+      .line { stroke: #0d2f22; stroke-width: 3; marker-end: url(#arrow); fill: none; }
+    </style>
+  </defs>
+  <rect class="bg" x="0" y="0" width="1040" height="420" rx="18"/>
+  <text class="head" x="40" y="46">Folder Flow</text>
+
+  <rect class="card" x="60" y="105" width="190" height="110"/>
+  <text class="body" x="86" y="150">User creates</text>
+  <text class="body" x="86" y="180">folder.</text>
+
+  <rect class="card" x="310" y="105" width="220" height="110"/>
+  <text class="body" x="336" y="150">SDK encrypts</text>
+  <text class="body" x="336" y="180">folder name.</text>
+
+  <rect class="card" x="590" y="85" width="230" height="150"/>
+  <text class="body" x="616" y="130">API stores folder</text>
+  <text class="body" x="616" y="160">record with id,</text>
+  <text class="body" x="616" y="190">parentId, metadata.</text>
+
+  <rect class="card" x="310" y="285" width="510" height="80"/>
+  <text class="body" x="336" y="333">Files and child folders point to this folder id through parentId.</text>
+
+  <path class="line" d="M250 160 H302"/>
+  <path class="line" d="M530 160 H582"/>
+  <path class="line" d="M705 235 V277"/>
+  <text class="body" x="60" y="270">MinIO is not involved when a folder is created.</text>
+</svg>

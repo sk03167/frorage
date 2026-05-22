@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="500" viewBox="0 0 1040 500" role="img" aria-labelledby="title desc">
+  <title id="title">Signup and key setup flow</title>
+  <desc id="desc">A flow from browser, to SDK, to API, and back to the signed-in browser vault.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#0d2f22"/>
+    </marker>
+    <style>
+      .bg { fill: #f7faf7; }
+      .card { fill: #ffffff; stroke: #b9c8c0; stroke-width: 2; rx: 14; }
+      .head { fill: #0d2f22; font: 700 22px Arial, sans-serif; }
+      .body { fill: #34463d; font: 17px Arial, sans-serif; }
+      .line { stroke: #0d2f22; stroke-width: 3; marker-end: url(#arrow); fill: none; }
+      .pill { fill: #dfe9e3; }
+      .pillText { fill: #0d2f22; font: 700 15px Arial, sans-serif; }
+    </style>
+  </defs>
+  <rect class="bg" x="0" y="0" width="1040" height="500" rx="18"/>
+  <text class="head" x="40" y="46">Signup and Key Setup</text>
+
+  <rect class="card" x="40" y="85" width="220" height="300"/>
+  <rect class="pill" x="64" y="112" width="92" height="30" rx="15"/>
+  <text class="pillText" x="84" y="133">Browser</text>
+  <text class="body" x="64" y="180">User enters signup</text>
+  <text class="body" x="64" y="207">email and password.</text>
+
+  <rect class="card" x="300" y="85" width="260" height="300"/>
+  <rect class="pill" x="324" y="112" width="64" height="30" rx="15"/>
+  <text class="pillText" x="346" y="133">SDK</text>
+  <text class="body" x="324" y="172">Generate account</text>
+  <text class="body" x="324" y="199">master key.</text>
+  <text class="body" x="324" y="237">Derive password key.</text>
+  <text class="body" x="324" y="275">Generate recovery</text>
+  <text class="body" x="324" y="302">secrets.</text>
+  <text class="body" x="324" y="340">Wrap master key.</text>
+
+  <rect class="card" x="600" y="85" width="220" height="300"/>
+  <rect class="pill" x="624" y="112" width="62" height="30" rx="15"/>
+  <text class="pillText" x="646" y="133">API</text>
+  <text class="body" x="624" y="180">Create user with</text>
+  <text class="body" x="624" y="207">password verifier</text>
+  <text class="body" x="624" y="234">and key bundle.</text>
+  <text class="body" x="624" y="288">Store email, quota,</text>
+  <text class="body" x="624" y="315">verifier, bundle.</text>
+
+  <rect class="card" x="860" y="85" width="140" height="300"/>
+  <rect class="pill" x="884" y="112" width="92" height="30" rx="15"/>
+  <text class="pillText" x="904" y="133">Browser</text>
+  <text class="body" x="884" y="180">Receive auth</text>
+  <text class="body" x="884" y="207">token.</text>
+  <text class="body" x="884" y="260">Show recovery</text>
+  <text class="body" x="884" y="287">phrase and file.</text>
+
+  <path class="line" d="M260 235 H292"/>
+  <path class="line" d="M560 235 H592"/>
+  <path class="line" d="M820 235 H852"/>
+  <text class="body" x="386" y="440">Result: the browser can unlock the vault; the API never stores the raw password or plaintext master key.</text>
+</svg>

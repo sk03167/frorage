@@ -107,6 +107,70 @@ input[type="checkbox"] {
   z-index: 10;
 }
 
+.modal-backdrop {
+  align-items: center;
+  background: rgb(16 33 29 / 18%);
+  bottom: 0;
+  display: flex;
+  justify-content: center;
+  left: 0;
+  padding: 24px;
+  position: fixed;
+  right: 0;
+  top: 0;
+  z-index: 40;
+}
+
+.modal {
+  background: #fff;
+  border: 1px solid #d9e3de;
+  border-radius: 8px;
+  box-shadow: 0 24px 60px rgb(16 39 31 / 18%);
+  display: grid;
+  gap: 14px;
+  max-width: 420px;
+  padding: 22px;
+  width: min(420px, 100%);
+}
+
+.modal h2 {
+  font-size: 20px;
+  margin: 0;
+}
+
+.modal p {
+  color: #43514a;
+  margin: 0;
+}
+
+.modal button {
+  justify-content: center;
+  justify-self: end;
+  min-width: 92px;
+}
+
+.modal-form {
+  display: grid;
+  gap: 14px;
+}
+
+.modal-form label {
+  color: #43514a;
+  display: grid;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+}
+
+.modal-actions button {
+  justify-self: auto;
+}
+
 .brand {
   align-items: center;
   display: flex;
