@@ -33,13 +33,45 @@ Frorage separates **object bytes** from **vault metadata**.
 
 ## Signup and Key Setup
 
-![Signup and key setup flow](./assets/signup-key-setup.svg)
+```mermaid
+sequenceDiagram
+  participant Browser
+  participant SDK
+  participant API
+
+  Browser->>SDK: Enter signup email and password
+  SDK->>SDK: Generate account master key
+  SDK->>SDK: Derive password key
+  SDK->>SDK: Generate recovery secrets
+  SDK->>SDK: Wrap account master key
+  SDK->>API: Create user with verifier and key bundle
+  API->>API: Store email, verifier, key bundle, quota
+  API-->>Browser: Return auth token and key bundle
+  Browser-->>Browser: Show recovery phrase and file
+```
 
 The recovery file does **not** contain the account master key directly. It contains a recovery secret that can unwrap the master key only when paired with the stored key bundle.
 
 ## Upload Flow
 
-![Upload flow](./assets/upload-flow.svg)
+```mermaid
+sequenceDiagram
+  participant Browser
+  participant SDK
+  participant API
+  participant MinIO
+
+  Browser->>SDK: Select file
+  SDK->>SDK: Encrypt file bytes
+  SDK->>SDK: Encrypt filename and metadata
+  SDK->>API: Init upload
+  API->>API: Create upload session
+  API-->>SDK: Return presigned PUT URL
+  SDK->>MinIO: PUT encrypted bytes
+  SDK->>API: Commit upload
+  API->>API: Create file record
+  API-->>Browser: Return file record
+```
 
 Object keys are intentionally opaque:
 
@@ -57,13 +89,35 @@ Example bucket object key: `users/user_qKG.../objects/obj_07Q...`
 
 Folders are API metadata records, not MinIO folders.
 
-![Folder flow](./assets/folder-flow.svg)
+```mermaid
+flowchart TD
+  A["User creates folder"] --> B["SDK encrypts folder name"]
+  B --> C["API stores folder record"]
+  C --> D["Folder has id, parentId, encryptedMetadata"]
+  D --> E["Files and folders reference parentId"]
+```
 
 Moving a file or folder changes only the record's `parentId`. The encrypted object bytes usually stay under the same object key.
 
 ## Download Flow
 
-![Download flow](./assets/download-flow.svg)
+```mermaid
+sequenceDiagram
+  participant Browser
+  participant SDK
+  participant API
+  participant MinIO
+
+  Browser->>SDK: Click Download
+  SDK->>API: Request download URL
+  API->>API: Verify auth and ownership
+  API-->>SDK: Return presigned GET URL
+  SDK->>MinIO: GET encrypted bytes
+  MinIO-->>SDK: Return encrypted bytes
+  SDK->>SDK: Decrypt file bytes
+  SDK->>SDK: Decrypt filename and metadata
+  SDK-->>Browser: Save plaintext file
+```
 
 The API authorizes the download, but the browser performs decryption.
 
