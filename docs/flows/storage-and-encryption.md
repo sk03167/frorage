@@ -1,97 +1,73 @@
 # Storage and Encryption Flow
 
-This document explains how Frorage stores files, folders, encrypted metadata, and recovery material.
+This document explains how Frorage stores files, folders, metadata, and server-side recovery material after the server-managed encryption pivot.
 
 ## Definitions
 
-- **Browser**: The Frorage web app running on the user's machine.
-- **SDK**: The TypeScript package used by the web app for auth, encryption, upload, download, and recovery logic.
-- **API**: The Frorage backend. It stores account/file/folder records and asks MinIO for temporary upload/download links.
-- **MinIO/S3**: The object storage service. It stores encrypted file bytes, but does not understand Frorage folders or filenames.
-- **Object bytes**: The actual uploaded file contents after encryption. For example, the encrypted bytes of `resume.pdf`.
-- **Object key**: The storage path MinIO uses for encrypted bytes, such as `users/<user-id>/objects/<object-id>`. It is intentionally random-looking and does not reveal the filename.
-- **Vault metadata**: Records that describe the vault, such as users, files, folders, parent folder relationships, encrypted filenames, object keys, and quotas.
-- **Plaintext**: Original readable data before encryption, such as the real filename or the original file bytes.
-- **Ciphertext**: Encrypted data. MinIO stores ciphertext, not plaintext.
-- **Account master key**: A random secret created during signup. It encrypts and decrypts the user's file bytes and metadata.
-- **Password key**: A key derived from the user's password. It is used to unlock the account master key, not to encrypt every file directly.
-- **Password verifier**: Data the API can use to check whether a login password is correct without storing the raw password.
-- **Key bundle**: Encrypted recovery/login material stored by the API. It lets the browser unlock the account master key after login or recovery, but it is not useful by itself without the password or recovery secret.
-- **Recovery phrase secret**: Secret material represented by the recovery phrase. It can help unlock the account master key if the password is lost.
-- **Recovery file secret**: Secret material saved inside the recovery file. It must be paired with the stored key bundle to recover access.
-- **Auth token**: A temporary login token returned by the API after signup/login. The browser sends it with later API requests to prove the user is signed in.
-- **Quota**: The account's storage limit and usage accounting.
-- **Presigned URL**: A temporary MinIO/S3 link created by the API so the browser can upload or download encrypted bytes directly.
+- **Browser**: The Frorage web app running on the user's machine. It uploads plaintext over HTTPS and receives plaintext previews/downloads from the API.
+- **API**: The trusted Frorage backend. It owns account keys, encrypts/decrypts files, and talks to MinIO/S3.
+- **MinIO/S3**: Object storage. It stores encrypted file bytes only.
+- **Account master key**: A random per-user secret created by the API at signup. It encrypts that user's files and metadata.
+- **Root encryption secret**: Server/admin secret configured as `MASTER_KEY_ENCRYPTION_SECRET`. It encrypts account master keys at rest.
+- **Storage prefix**: Server-known bucket prefix for a user, such as `users/user_abc`. It maps email/user id to object storage.
+- **Plaintext**: Readable original data, such as a filename or file bytes.
+- **Ciphertext**: Encrypted data stored in MinIO/S3 or metadata records.
+- **Admin token**: Secret bearer token used for admin recovery APIs.
 
 ## Core Idea
 
-Frorage separates **object bytes** from **vault metadata**.
+Frorage is now server-managed encrypted storage.
 
-- MinIO/S3 stores encrypted object bytes under opaque object keys.
-- The API stores account records, key bundles, file records, folder records, object-key mappings, and encrypted metadata.
-- The browser/SDK owns encryption and decryption. The API never receives plaintext file bytes, filenames, folder names, or the account master key.
+- The browser does not hold file encryption keys.
+- The API encrypts before storing bytes in MinIO/S3.
+- The API decrypts for authenticated preview/download.
+- Admin recovery is required for all users and is handled by server-side key custody.
 
 ## Signup and Key Setup
 
 ```mermaid
 sequenceDiagram
   participant Browser
-  participant SDK
   participant API
+  participant Store
 
-  Browser->>SDK: Enter signup email and password
-  SDK->>SDK: Generate account master key
-  SDK->>SDK: Derive password key
-  SDK->>SDK: Generate recovery secrets
-  SDK->>SDK: Wrap account master key
-  SDK->>API: Create user with verifier and key bundle
-  API->>API: Store email, verifier, key bundle, quota
-  API-->>Browser: Return auth token and key bundle
-  Browser-->>Browser: Show recovery phrase and file
+  Browser->>API: Signup email and password verifier
+  API->>API: Generate account master key
+  API->>API: Encrypt master key with root secret
+  API->>Store: Store email, verifier, storagePrefix, encrypted key
+  API-->>Browser: Return auth token
 ```
 
-The recovery file does **not** contain the account master key directly. It contains a recovery secret that can unwrap the master key only when paired with the stored key bundle.
+Users do not receive a recovery phrase, recovery file, or account master key.
 
 ## Upload Flow
 
 ```mermaid
 sequenceDiagram
   participant Browser
-  participant SDK
   participant API
   participant MinIO
+  participant Store
 
-  Browser->>SDK: Select file
-  SDK->>SDK: Encrypt file bytes
-  SDK->>SDK: Encrypt filename and metadata
-  SDK->>API: Init upload
-  API->>API: Create upload session
-  API-->>SDK: Return presigned PUT URL
-  SDK->>MinIO: PUT encrypted bytes
-  SDK->>API: Commit upload
-  API->>API: Create file record
-  API-->>Browser: Return file record
+  Browser->>API: Upload plaintext file over HTTPS
+  API->>API: Decrypt user's account master key
+  API->>API: Encrypt file bytes and metadata
+  API->>MinIO: Store encrypted bytes under storagePrefix
+  API->>Store: Store file record and encrypted metadata
+  API-->>Browser: Return file record with plaintext display metadata
 ```
 
-Object keys are intentionally opaque:
+Object keys are intentionally server-owned:
 
 Example: `frorage/users/<user-id>/objects/<object-id>`
 
-The bucket does not mirror the visible folder tree. A file shown as:
-
-Example visible path: `Vault / Taxes / 2026 / return.pdf`
-
-still lives in the bucket as something like:
-
-Example bucket object key: `users/user_qKG.../objects/obj_07Q...`
+The bucket does not mirror the visible folder tree. Folders are metadata records.
 
 ## Folder Flow
 
-Folders are API metadata records, not MinIO folders.
-
 ```mermaid
 flowchart TD
-  A["User creates folder"] --> B["SDK encrypts folder name"]
+  A["User creates folder"] --> B["API encrypts folder metadata"]
   B --> C["API stores folder record"]
   C --> D["Folder has id, parentId, encryptedMetadata"]
   D --> E["Files and folders reference parentId"]
@@ -99,68 +75,56 @@ flowchart TD
 
 Moving a file or folder changes only the record's `parentId`. The encrypted object bytes usually stay under the same object key.
 
-## Download Flow
+## Preview and Download Flow
 
 ```mermaid
 sequenceDiagram
   participant Browser
-  participant SDK
   participant API
   participant MinIO
 
-  Browser->>SDK: Click Download
-  SDK->>API: Request download URL
+  Browser->>API: Request preview or download
   API->>API: Verify auth and ownership
-  API-->>SDK: Return presigned GET URL
-  SDK->>MinIO: GET encrypted bytes
-  MinIO-->>SDK: Return encrypted bytes
-  SDK->>SDK: Decrypt file bytes
-  SDK->>SDK: Decrypt filename and metadata
-  SDK-->>Browser: Save plaintext file
+  API->>MinIO: Read encrypted object bytes
+  MinIO-->>API: Return encrypted bytes
+  API->>API: Decrypt bytes and metadata
+  API-->>Browser: Return plaintext bytes
 ```
 
-The API authorizes the download, but the browser performs decryption.
+The browser renders supported previews for images, videos, and PDFs. Other file types remain download-only.
 
-## Copy and Move
+## Admin Recovery Flow
 
-Move is metadata-only. The app updates the file record with `PATCH /v1/files/{fileId}` and sets `parentId` to the destination folder id.
+```mermaid
+sequenceDiagram
+  participant Admin
+  participant API
+  participant MinIO
 
-Copy is currently client-driven:
+  Admin->>API: Search user by email with admin token
+  API-->>Admin: Return user and storagePrefix
+  Admin->>API: Browse user's files
+  API-->>Admin: Return decrypted display metadata
+  Admin->>API: Preview or download file
+  API->>MinIO: Read encrypted object
+  API->>API: Decrypt with user's account master key
+  API-->>Admin: Return plaintext bytes
+```
 
-1. Download encrypted object through the normal download flow.
-2. Decrypt bytes in the browser.
-3. Re-encrypt/upload as a new object.
-4. Commit a new file record in the destination folder.
+Admin recovery is a product feature, not a hidden zero-knowledge bypass. Frorage operators with valid admin credentials can recover user files.
 
-If the client disconnects during copy, the original remains safe, but the copy may be partial or absent. A future server-side encrypted-blob copy can make same-account copies more robust without exposing plaintext to the API.
-
-## Recovery File Limits
-
-Recovery protects against password loss, not metadata loss.
-
-Recovery works when the API still has:
-
-- the user record;
-- the user's key bundle;
-- the file/folder records;
-- encrypted metadata;
-- object-key mappings.
-
-Recovery does **not** work if the API metadata is lost and only MinIO objects remain. The recovery file alone cannot identify which bucket prefix belongs to an email, cannot rebuild the key bundle, and cannot reconstruct filenames or folder structure.
-
-## Metadata Persistence Requirement
+## Persistence Requirement
 
 The current MVP in-memory API repository is not durable. If the API process restarts, user/account/file metadata is lost even if encrypted blobs still exist in MinIO.
-
-To make local development durable, add a persistent repository such as SQLite. For production, use the existing Postgres schema target.
 
 Durable metadata must include:
 
 - users and email-to-user id mapping;
 - password verifier;
-- key bundle;
+- storage prefix;
+- encrypted account master key and nonce;
 - file/folder records;
 - parent folder relationships;
 - encrypted metadata;
 - object keys;
-- upload sessions and usage events.
+- usage events and password reset records.

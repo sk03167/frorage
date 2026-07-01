@@ -3,20 +3,15 @@ package store
 import "time"
 
 type User struct {
-	ID               string    `json:"id"`
-	Email            string    `json:"email"`
-	PasswordVerifier string    `json:"-"`
-	KeyBundle        KeyBundle `json:"keyBundle"`
-	QuotaBytes       int64     `json:"quotaBytes"`
-	UsedBytes        int64     `json:"usedBytes"`
-	CreatedAt        time.Time `json:"createdAt"`
-}
-
-type KeyBundle struct {
-	PasswordWrappedMasterKey       string `json:"passwordWrappedMasterKey"`
-	PasswordKdfSalt                string `json:"passwordKdfSalt"`
-	RecoveryPhraseWrappedMasterKey string `json:"recoveryPhraseWrappedMasterKey"`
-	RecoveryFileWrappedMasterKey   string `json:"recoveryFileWrappedMasterKey"`
+	ID                        string    `json:"id"`
+	Email                     string    `json:"email"`
+	PasswordVerifier          string    `json:"-"`
+	StoragePrefix             string    `json:"storagePrefix"`
+	EncryptedAccountMasterKey string    `json:"-"`
+	AccountMasterKeyNonce     string    `json:"-"`
+	QuotaBytes                int64     `json:"quotaBytes"`
+	UsedBytes                 int64     `json:"usedBytes"`
+	CreatedAt                 time.Time `json:"createdAt"`
 }
 
 type FileKind string
@@ -32,6 +27,9 @@ type FileRecord struct {
 	Kind              FileKind  `json:"kind"`
 	ParentID          *string   `json:"parentId"`
 	EncryptedMetadata string    `json:"encryptedMetadata"`
+	Name              string    `json:"name,omitempty"`
+	MimeType          string    `json:"mimeType,omitempty"`
+	LastModified      int64     `json:"lastModified,omitempty"`
 	CiphertextSize    int64     `json:"ciphertextSize"`
 	ObjectKey         *string   `json:"objectKey"`
 	CreatedAt         time.Time `json:"createdAt"`
@@ -47,6 +45,13 @@ type UploadSession struct {
 	ObjectKey         string    `json:"objectKey"`
 	ExpiresAt         time.Time `json:"expiresAt"`
 	Committed         bool      `json:"committed"`
+}
+
+type PasswordReset struct {
+	Token     string    `json:"token"`
+	UserID    string    `json:"userId"`
+	ExpiresAt time.Time `json:"expiresAt"`
+	Used      bool      `json:"used"`
 }
 
 type UsageEvent struct {

@@ -19,15 +19,21 @@ type Repository interface {
 	CreateUser(user User) (User, error)
 	UserByEmail(email string) (User, error)
 	UserByID(id string) (User, error)
-	UpdateUserKeyBundle(userID string, bundle KeyBundle, passwordVerifier string) (User, error)
+	UsersByEmail(email string) ([]User, error)
+	UpdatePasswordVerifier(userID string, passwordVerifier string) (User, error)
 	CreateUpload(session UploadSession) (UploadSession, error)
 	UploadByID(userID, uploadID string) (UploadSession, error)
 	CommitUpload(userID, uploadID string) (FileRecord, error)
+	CreateFile(file FileRecord) (FileRecord, error)
 	CreateFolder(file FileRecord) (FileRecord, error)
 	ListFiles(userID string) ([]FileRecord, error)
 	FileByID(userID, fileID string) (FileRecord, error)
+	AdminFileByID(fileID string) (FileRecord, error)
 	UpdateFile(userID, fileID string, parentID *string, encryptedMetadata string) (FileRecord, error)
 	DeleteFile(userID, fileID string) error
+	CreatePasswordReset(reset PasswordReset) (PasswordReset, error)
+	PasswordResetByToken(token string) (PasswordReset, error)
+	MarkPasswordResetUsed(token string) error
 	AddUsage(event UsageEvent) error
 	UsageForUser(userID string) ([]UsageEvent, error)
 	ProviderCost(provider string) (ProviderCost, error)
@@ -39,6 +45,7 @@ type MemoryRepository struct {
 	userIDByEmail map[string]string
 	filesByID     map[string]FileRecord
 	uploadsByID   map[string]UploadSession
+	resetsByToken map[string]PasswordReset
 	usage         []UsageEvent
 	providerCosts map[string]ProviderCost
 }
@@ -50,6 +57,7 @@ func NewMemoryRepository() *MemoryRepository {
 		userIDByEmail: map[string]string{},
 		filesByID:     map[string]FileRecord{},
 		uploadsByID:   map[string]UploadSession{},
+		resetsByToken: map[string]PasswordReset{},
 		providerCosts: map[string]ProviderCost{
 			"s3-compatible": {
 				Provider:       "s3-compatible",
@@ -99,7 +107,24 @@ func (r *MemoryRepository) UserByID(id string) (User, error) {
 	return user, nil
 }
 
-func (r *MemoryRepository) UpdateUserKeyBundle(userID string, bundle KeyBundle, passwordVerifier string) (User, error) {
+func (r *MemoryRepository) UsersByEmail(email string) ([]User, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	normalized := normalizeEmail(email)
+	users := make([]User, 0)
+	for _, user := range r.usersByID {
+		if normalized == "" || strings.Contains(user.Email, normalized) {
+			users = append(users, user)
+		}
+	}
+	sort.Slice(users, func(i, j int) bool {
+		return users[i].CreatedAt.Before(users[j].CreatedAt)
+	})
+	return users, nil
+}
+
+func (r *MemoryRepository) UpdatePasswordVerifier(userID string, passwordVerifier string) (User, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -107,7 +132,6 @@ func (r *MemoryRepository) UpdateUserKeyBundle(userID string, bundle KeyBundle, 
 	if !ok {
 		return User{}, ErrNotFound
 	}
-	user.KeyBundle = bundle
 	user.PasswordVerifier = passwordVerifier
 	r.usersByID[userID] = user
 	return user, nil
@@ -174,6 +198,23 @@ func (r *MemoryRepository) CommitUpload(userID, uploadID string) (FileRecord, er
 	return file, nil
 }
 
+func (r *MemoryRepository) CreateFile(file FileRecord) (FileRecord, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	user, ok := r.usersByID[file.UserID]
+	if !ok {
+		return FileRecord{}, ErrNotFound
+	}
+	if user.UsedBytes+file.CiphertextSize > user.QuotaBytes {
+		return FileRecord{}, ErrQuotaExceeded
+	}
+	r.filesByID[file.ID] = file
+	user.UsedBytes += file.CiphertextSize
+	r.usersByID[file.UserID] = user
+	return file, nil
+}
+
 func (r *MemoryRepository) CreateFolder(file FileRecord) (FileRecord, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -207,6 +248,17 @@ func (r *MemoryRepository) FileByID(userID, fileID string) (FileRecord, error) {
 
 	file, ok := r.filesByID[fileID]
 	if !ok || file.UserID != userID {
+		return FileRecord{}, ErrNotFound
+	}
+	return file, nil
+}
+
+func (r *MemoryRepository) AdminFileByID(fileID string) (FileRecord, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	file, ok := r.filesByID[fileID]
+	if !ok {
 		return FileRecord{}, ErrNotFound
 	}
 	return file, nil
@@ -246,6 +298,41 @@ func (r *MemoryRepository) DeleteFile(userID, fileID string) error {
 		}
 		r.usersByID[userID] = user
 	}
+	return nil
+}
+
+func (r *MemoryRepository) CreatePasswordReset(reset PasswordReset) (PasswordReset, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if _, ok := r.usersByID[reset.UserID]; !ok {
+		return PasswordReset{}, ErrNotFound
+	}
+	r.resetsByToken[reset.Token] = reset
+	return reset, nil
+}
+
+func (r *MemoryRepository) PasswordResetByToken(token string) (PasswordReset, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+
+	reset, ok := r.resetsByToken[token]
+	if !ok {
+		return PasswordReset{}, ErrNotFound
+	}
+	return reset, nil
+}
+
+func (r *MemoryRepository) MarkPasswordResetUsed(token string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	reset, ok := r.resetsByToken[token]
+	if !ok {
+		return ErrNotFound
+	}
+	reset.Used = true
+	r.resetsByToken[token] = reset
 	return nil
 }
 

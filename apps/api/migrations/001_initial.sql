@@ -2,12 +2,19 @@ CREATE TABLE users (
   id TEXT PRIMARY KEY,
   email TEXT UNIQUE NOT NULL,
   password_verifier TEXT NOT NULL,
-  password_wrapped_master_key TEXT NOT NULL,
-  password_kdf_salt TEXT NOT NULL,
-  recovery_phrase_wrapped_master_key TEXT NOT NULL,
-  recovery_file_wrapped_master_key TEXT NOT NULL,
+  storage_prefix TEXT UNIQUE NOT NULL,
+  encrypted_account_master_key TEXT NOT NULL,
+  account_master_key_nonce TEXT NOT NULL,
   quota_bytes BIGINT NOT NULL,
   used_bytes BIGINT NOT NULL DEFAULT 0,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE password_resets (
+  token TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  expires_at TIMESTAMPTZ NOT NULL,
+  used BOOLEAN NOT NULL DEFAULT false,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

@@ -2,36 +2,38 @@
 
 ## Backend Boundary
 
-The Go API is intentionally client-agnostic. Browser, mobile, desktop, or CLI clients only need the HTTP API in `docs/openapi.yaml`.
+The Go API is the trusted encryption boundary for Frorage. Browser, mobile, desktop, or CLI clients use the HTTP API and do not receive account master keys.
 
 The backend owns:
 
 - account records and auth tokens;
-- opaque encrypted metadata records;
+- encrypted account master keys;
+- plaintext upload/download handling over HTTPS;
+- file/folder metadata encryption and decryption;
+- object-store reads and writes;
 - quota and usage accounting;
-- presigned object-store upload/download URLs;
-- provider cost tables for metered billing.
+- admin recovery APIs.
 
-The backend does not own plaintext file bytes, filenames, folder names, or account master keys.
+Because server-side recovery is required, Frorage is **not** a strict zero-knowledge system. The server can decrypt user files for normal downloads, previews, and admin recovery.
 
 ## Storage Boundary
 
-`ObjectStore` is the storage port. The first adapter generates S3-compatible SigV4 presigned URLs and works with MinIO, AWS S3, Cloudflare R2, Backblaze B2, Oracle Object Storage, and other S3-compatible providers.
+`ObjectStore` is the storage port. The first adapter uses S3-compatible SigV4 URLs internally and works with MinIO and other S3-compatible providers.
 
-Azure Blob should be added as a second adapter because it uses its own native API rather than the S3 API shape.
+MinIO/S3 stores encrypted object bytes under server-generated object keys. Users see files and folders through API metadata, not bucket paths.
 
-## E2EE Boundary
+## Encryption Boundary
 
-The TypeScript SDK owns encryption:
+Each user has a random account master key created by the API at signup. The account master key is encrypted at rest with `MASTER_KEY_ENCRYPTION_SECRET`.
 
-- generate account master key;
-- derive a password wrapping key;
-- wrap the master key for password unlock;
-- wrap the same master key for recovery phrase and recovery file unlock;
-- encrypt file bytes and metadata before upload;
-- decrypt file bytes and metadata after download.
+The API decrypts the account master key when it needs to:
 
-Password reset can update login credentials immediately, but old files are only recoverable when the client can unwrap the existing master key with a recovery phrase or recovery file.
+- encrypt uploaded file bytes and metadata;
+- decrypt metadata for file lists;
+- decrypt file bytes for preview/download;
+- support admin recovery.
+
+Users only need email/password for login. Forgot password resets login credentials; it does not rotate or recover user-held keys because users do not hold file recovery keys.
 
 ## Persistence
 

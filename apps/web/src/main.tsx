@@ -4,6 +4,7 @@ import {
   Copy,
   Trash2,
   Download,
+  Eye,
   FileUp,
   FolderOpen,
   FolderPlus,
@@ -19,12 +20,10 @@ import {
 } from "lucide-react";
 import {
   PrivateCloudClient,
-  createAccountCrypto,
-  decryptMetadata,
   passwordVerifier,
-  unlockWithPassword,
+  type AdminUser,
+  type DownloadedFile,
   type FileRecord,
-  type RecoveryKit,
 } from "@frorage/sdk";
 import "./styles.css";
 
@@ -40,6 +39,20 @@ type Notice = {
   message: string;
 };
 
+type PreviewState = {
+  file: FileRecord;
+  url: string;
+  mimeType: string;
+};
+
+const previewLimitBytes = 100 * 1024 * 1024;
+
+if (window.location.pathname === "/admin") {
+  createRoot(document.getElementById("root")!).render(<AdminApp />);
+} else {
+  createRoot(document.getElementById("root")!).render(<App />);
+}
+
 function App() {
   const client = useMemo(() => new PrivateCloudClient({ baseUrl: apiBaseUrl }), []);
   const [email, setEmail] = useState("");
@@ -48,8 +61,6 @@ function App() {
   const [signupPassword, setSignupPassword] = useState("");
   const [signupOpen, setSignupOpen] = useState(false);
   const [token, setToken] = useState<string | null>(null);
-  const [masterKey, setMasterKey] = useState<CryptoKey | null>(null);
-  const [recoveryKit, setRecoveryKit] = useState<RecoveryKit | null>(null);
   const [files, setFiles] = useState<FileRecord[]>([]);
   const [names, setNames] = useState<Record<string, string>>({});
   const [folderName, setFolderName] = useState("");
@@ -59,8 +70,9 @@ function App() {
   const [pendingOperation, setPendingOperation] = useState<PendingOperation | null>(null);
   const [draggedIds, setDraggedIds] = useState<string[]>([]);
   const [notice, setNotice] = useState<Notice | null>(null);
+  const [preview, setPreview] = useState<PreviewState | null>(null);
   const [status, setStatus] = useState("Ready");
-  const isUnlocked = Boolean(token && masterKey);
+  const isUnlocked = Boolean(token);
   const visibleFiles = files.filter((file) => (file.parentId ?? null) === currentFolderId);
   const selectedFiles = files.filter((file) => selectedIds.has(file.id));
   const selectedVisibleFiles = visibleFiles.filter((file) => selectedIds.has(file.id));
@@ -80,13 +92,12 @@ function App() {
     return () => window.removeEventListener("keydown", closeOnEnter);
   }, [notice]);
 
-  async function refreshFiles(key = masterKey) {
-    if (!key) return;
+  async function refreshFiles() {
+    if (!token) return;
     const nextFiles = await client.listFiles();
     const nextNames: Record<string, string> = {};
     for (const file of nextFiles) {
-      const metadata = await decryptMetadata(key, file.encryptedMetadata);
-      nextNames[file.id] = metadata.name;
+      nextNames[file.id] = file.name;
     }
     setFiles(nextFiles);
     setNames(nextNames);
@@ -99,22 +110,19 @@ function App() {
     event.preventDefault();
     setStatus("Creating encrypted account...");
     try {
-      const account = await createAccountCrypto(signupEmail, signupPassword);
-      const response = await client.signup(signupEmail, account.passwordVerifier, account.keyBundle);
+      const response = await client.signup(signupEmail, await passwordVerifier(signupEmail, signupPassword));
       setToken(response.token);
-      setMasterKey(account.masterKey);
-      setRecoveryKit(account.recoveryKit);
       setAccountMenuOpen(false);
       setSignupOpen(false);
       setEmail(signupEmail);
       setPassword("");
       setSignupPassword("");
-      setStatus("Account created. Save your recovery phrase and file before uploading important data.");
+      setStatus("Account created.");
       setNotice({
         title: "Account created",
-        message: "Your encrypted Frorage account is ready. Save your recovery phrase and recovery file before uploading important data.",
+        message: "Your Frorage account is ready. If you forget your password, Frorage can reset login access and recover your files.",
       });
-      await refreshFiles(account.masterKey);
+      await refreshFiles();
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to create account.";
       setStatus("Ready");
@@ -130,12 +138,10 @@ function App() {
     setStatus("Checking credentials...");
     try {
       const response = await client.login(email, await passwordVerifier(email, password));
-      const key = await unlockWithPassword(password, response.keyBundle);
       setToken(response.token);
-      setMasterKey(key);
       setAccountMenuOpen(false);
       setStatus("Vault unlocked.");
-      await refreshFiles(key);
+      await refreshFiles();
     } catch {
       setStatus("Ready");
       setNotice({
@@ -147,8 +153,6 @@ function App() {
 
   function logout() {
     setToken(null);
-    setMasterKey(null);
-    setRecoveryKit(null);
     setFiles([]);
     setNames({});
     setPassword("");
@@ -158,6 +162,7 @@ function App() {
     setSelectedIds(new Set());
     setPendingOperation(null);
     setDraggedIds([]);
+    closePreview();
     setStatus("Logged out.");
   }
 
@@ -169,32 +174,60 @@ function App() {
 
   async function createFolder(event: React.FormEvent) {
     event.preventDefault();
-    if (!masterKey) return;
+    if (!token) return;
     if (!folderName.trim()) {
       setStatus("Enter a folder name first.");
       return;
     }
     setStatus("Creating encrypted folder...");
-    await client.createFolder(masterKey, currentFolderId, { name: folderName.trim() });
+    await client.createFolder(currentFolderId, { name: folderName.trim() });
     setFolderName("");
     await refreshFiles();
     setStatus("Folder created.");
   }
 
   async function uploadSelected(fileList: FileList | null) {
-    if (!masterKey || !fileList?.length) return;
-    setStatus("Encrypting and uploading...");
+    if (!token || !fileList?.length) return;
+    setStatus("Uploading...");
     for (const file of Array.from(fileList)) {
-      await client.uploadFile(masterKey, currentFolderId, file);
+      await client.uploadFile(currentFolderId, file);
     }
     await refreshFiles();
     setStatus("Upload complete.");
   }
 
   async function downloadSelected(file: FileRecord) {
-    if (!masterKey || file.kind !== "file") return;
-    setStatus("Decrypting download...");
-    const download = await client.downloadFile(masterKey, file);
+    if (file.kind !== "file") return;
+    setStatus("Preparing download...");
+    const download = await client.downloadFile(file);
+    saveDownloadedFile(download);
+    setStatus("Download ready.");
+  }
+
+  async function previewSelected(file: FileRecord) {
+    if (file.kind !== "file") return;
+    if (!canPreview(file)) {
+      setStatus("Preview is available for images, videos, and PDFs up to 100 MB.");
+      return;
+    }
+    closePreview();
+    setStatus("Preparing preview...");
+    const download = await client.previewFile(file);
+    const blob = new Blob([bytesToArrayBuffer(download.bytes)], {
+      type: download.metadata.mimeType || "application/octet-stream",
+    });
+    setPreview({ file, url: URL.createObjectURL(blob), mimeType: blob.type });
+    setStatus("Preview ready.");
+  }
+
+  function closePreview() {
+    setPreview((current) => {
+      if (current) URL.revokeObjectURL(current.url);
+      return null;
+    });
+  }
+
+  function saveDownloadedFile(download: DownloadedFile) {
     const blob = new Blob([bytesToArrayBuffer(download.bytes)], {
       type: download.metadata.mimeType || "application/octet-stream",
     });
@@ -206,7 +239,6 @@ function App() {
     link.click();
     link.remove();
     URL.revokeObjectURL(url);
-    setStatus("Download ready.");
   }
 
   function canMoveTo(targetParentId: string | null, ids: string[]): boolean {
@@ -294,7 +326,6 @@ function App() {
   }
 
   async function copyItems(ids: string[], targetParentId: string | null) {
-    if (!masterKey) return;
     const items = ids.map((id) => files.find((file) => file.id === id)).filter((file): file is FileRecord => Boolean(file));
     const fileItems = items.filter((file) => file.kind === "file");
     if (fileItems.length !== items.length) {
@@ -303,7 +334,7 @@ function App() {
     }
     setStatus("Copying files...");
     for (const file of fileItems) {
-      await client.copyFile(masterKey, file, targetParentId);
+      await client.copyFile(file, targetParentId);
     }
     setSelectedIds(new Set());
     setPendingOperation(null);
@@ -430,21 +461,22 @@ function App() {
           </form>
         )}
 
-        {recoveryKit ? (
-          <section className="recovery">
-            <h2>Recovery kit</h2>
-            <p>{recoveryKit.phrase}</p>
-            <a
-              download="frorage-recovery.json"
-              href={`data:application/json,${encodeURIComponent(JSON.stringify(recoveryKit.file, null, 2))}`}
-            >
-              Download recovery file
-            </a>
-          </section>
-        ) : null}
       </aside>
 
       <section className="workspace">
+        {preview ? (
+          <div className="modal-backdrop" role="presentation">
+            <section aria-modal="true" className="modal preview-modal" role="dialog" aria-labelledby="preview-title">
+              <div className="preview-header">
+                <h2 id="preview-title">{preview.file.name}</h2>
+                <button className="icon-button" type="button" aria-label="Close preview" onClick={closePreview}>
+                  <X size={18} />
+                </button>
+              </div>
+              <PreviewContent preview={preview} />
+            </section>
+          </div>
+        ) : null}
         <header className="topbar">
           <div className="topbar-title">
             {isUnlocked ? (
@@ -486,7 +518,7 @@ function App() {
             </nav>
             <form onSubmit={createFolder}>
               <input value={folderName} onChange={(event) => setFolderName(event.target.value)} placeholder="New encrypted folder" />
-              <button disabled={!masterKey || !folderName.trim()} type="submit">
+              <button disabled={!token || !folderName.trim()} type="submit">
                 <FolderPlus size={18} />
                 Folder
               </button>
@@ -495,7 +527,7 @@ function App() {
           <label className="upload">
             <FileUp size={18} />
             Upload
-            <input disabled={!masterKey} type="file" multiple onChange={(event) => uploadSelected(event.target.files)} />
+            <input disabled={!token} type="file" multiple onChange={(event) => uploadSelected(event.target.files)} />
           </label>
         </div>
 
@@ -569,7 +601,7 @@ function App() {
           {visibleFiles.length === 0 ? (
             <div className="empty">
               <Lock size={28} />
-              <p>{masterKey ? "No files yet." : "Log in or sign up to unlock your encrypted vault."}</p>
+              <p>{token ? "No files yet." : "Log in or sign up to unlock your vault."}</p>
             </div>
           ) : (
             visibleFiles.map((file) => (
@@ -619,10 +651,16 @@ function App() {
                 <span>{file.ciphertextSize.toLocaleString()}</span>
                 <span className="row-actions">
                   {file.kind === "file" ? (
-                    <button className="row-action" type="button" onClick={() => downloadSelected(file)}>
-                      <Download size={18} />
-                      Download
-                    </button>
+                    <>
+                      <button className="row-action" disabled={!canPreview(file)} type="button" onClick={() => previewSelected(file)}>
+                        <Eye size={18} />
+                        Preview
+                      </button>
+                      <button className="row-action" type="button" onClick={() => downloadSelected(file)}>
+                        <Download size={18} />
+                        Download
+                      </button>
+                    </>
                   ) : (
                     <span className="muted">Drop files here</span>
                   )}
@@ -636,7 +674,200 @@ function App() {
   );
 }
 
-createRoot(document.getElementById("root")!).render(<App />);
+function AdminApp() {
+  const client = useMemo(() => new PrivateCloudClient({ baseUrl: apiBaseUrl }), []);
+  const [adminToken, setAdminToken] = useState("");
+  const [emailSearch, setEmailSearch] = useState("");
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
+  const [files, setFiles] = useState<FileRecord[]>([]);
+  const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
+  const [preview, setPreview] = useState<PreviewState | null>(null);
+  const [status, setStatus] = useState("Admin recovery");
+  const visibleFiles = files.filter((file) => (file.parentId ?? null) === currentFolderId);
+
+  function closePreview() {
+    setPreview((current) => {
+      if (current) URL.revokeObjectURL(current.url);
+      return null;
+    });
+  }
+
+  async function searchUsers(event: React.FormEvent) {
+    event.preventDefault();
+    client.setAdminToken(adminToken);
+    setStatus("Searching users...");
+    const nextUsers = await client.adminUsers(emailSearch);
+    setUsers(nextUsers);
+    setSelectedUser(null);
+    setFiles([]);
+    setCurrentFolderId(null);
+    setStatus(nextUsers.length === 0 ? "No users found." : `${nextUsers.length} user found.`);
+  }
+
+  async function openUser(user: AdminUser) {
+    client.setAdminToken(adminToken);
+    setSelectedUser(user);
+    setCurrentFolderId(null);
+    closePreview();
+    setStatus("Loading user files...");
+    const nextFiles = await client.adminFiles(user.id);
+    setFiles(nextFiles);
+    setStatus(`Viewing ${user.email}`);
+  }
+
+  async function previewAdminFile(file: FileRecord) {
+    if (!canPreview(file)) {
+      setStatus("Preview is available for images, videos, and PDFs up to 100 MB.");
+      return;
+    }
+    client.setAdminToken(adminToken);
+    closePreview();
+    setStatus("Preparing admin preview...");
+    const download = await client.adminPreviewFile(file);
+    const blob = new Blob([bytesToArrayBuffer(download.bytes)], {
+      type: download.metadata.mimeType || "application/octet-stream",
+    });
+    setPreview({ file, url: URL.createObjectURL(blob), mimeType: blob.type });
+    setStatus("Preview ready.");
+  }
+
+  async function downloadAdminFile(file: FileRecord) {
+    client.setAdminToken(adminToken);
+    setStatus("Preparing admin download...");
+    const download = await client.adminDownloadFile(file);
+    saveDownloadedFile(download);
+    setStatus("Download ready.");
+  }
+
+  function saveDownloadedFile(download: DownloadedFile) {
+    const blob = new Blob([bytesToArrayBuffer(download.bytes)], {
+      type: download.metadata.mimeType || "application/octet-stream",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = download.metadata.name;
+    document.body.append(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  return (
+    <main className="admin-app">
+      {preview ? (
+        <div className="modal-backdrop" role="presentation">
+          <section aria-modal="true" className="modal preview-modal" role="dialog" aria-labelledby="preview-title">
+            <div className="preview-header">
+              <h2 id="preview-title">{preview.file.name}</h2>
+              <button className="icon-button" type="button" aria-label="Close preview" onClick={closePreview}>
+                <X size={18} />
+              </button>
+            </div>
+            <PreviewContent preview={preview} />
+          </section>
+        </div>
+      ) : null}
+
+      <header className="topbar">
+        <div className="brand">
+          <ShieldCheck size={30} />
+          <div>
+            <h1>Frorage Admin</h1>
+            <p>{status}</p>
+          </div>
+        </div>
+        <a className="text-link" href="/">
+          Vault
+        </a>
+      </header>
+
+      <section className="admin-grid">
+        <form className="admin-panel" onSubmit={searchUsers}>
+          <h2>User lookup</h2>
+          <label>
+            Admin token
+            <input value={adminToken} onChange={(event) => setAdminToken(event.target.value)} type="password" required />
+          </label>
+          <label>
+            Email
+            <input value={emailSearch} onChange={(event) => setEmailSearch(event.target.value)} type="email" placeholder="user@example.com" />
+          </label>
+          <button type="submit">Search</button>
+          <div className="admin-list">
+            {users.map((user) => (
+              <button className="secondary-action" key={user.id} type="button" onClick={() => openUser(user)}>
+                {user.email}
+              </button>
+            ))}
+          </div>
+        </form>
+
+        <section className="admin-panel">
+          <h2>{selectedUser ? selectedUser.email : "Recovered vault"}</h2>
+          {selectedUser ? <p className="muted">{selectedUser.storagePrefix}</p> : <p className="muted">Search and choose a user.</p>}
+          {currentFolderId ? (
+            <button className="secondary-action" type="button" onClick={() => setCurrentFolderId(null)}>
+              Back to vault
+            </button>
+          ) : null}
+          <div className="table admin-table">
+            {visibleFiles.map((file) => (
+              <div className="row" key={file.id}>
+                <span className="name-cell">
+                  {file.kind === "folder" ? (
+                    <button className="folder-link" type="button" onClick={() => setCurrentFolderId(file.id)}>
+                      <FolderOpen size={18} />
+                      {file.name}
+                    </button>
+                  ) : (
+                    file.name
+                  )}
+                </span>
+                <span>{file.kind}</span>
+                <span>{file.ciphertextSize.toLocaleString()}</span>
+                <span className="row-actions">
+                  {file.kind === "file" ? (
+                    <>
+                      <button className="row-action" disabled={!canPreview(file)} type="button" onClick={() => previewAdminFile(file)}>
+                        <Eye size={18} />
+                        Preview
+                      </button>
+                      <button className="row-action" type="button" onClick={() => downloadAdminFile(file)}>
+                        <Download size={18} />
+                        Download
+                      </button>
+                    </>
+                  ) : null}
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+      </section>
+    </main>
+  );
+}
+
+function PreviewContent({ preview }: { preview: PreviewState }) {
+  if (preview.mimeType.startsWith("image/")) {
+    return <img className="preview-media" src={preview.url} alt={preview.file.name} />;
+  }
+  if (preview.mimeType.startsWith("video/")) {
+    return <video className="preview-media" src={preview.url} controls />;
+  }
+  if (preview.mimeType === "application/pdf") {
+    return <iframe className="preview-frame" src={preview.url} title={preview.file.name} />;
+  }
+  return <p className="muted">Preview is not available for this file type.</p>;
+}
+
+function canPreview(file: FileRecord): boolean {
+  if (file.kind !== "file" || file.ciphertextSize > previewLimitBytes) return false;
+  const mimeType = file.mimeType ?? "";
+  return mimeType.startsWith("image/") || mimeType.startsWith("video/") || mimeType === "application/pdf";
+}
 
 function bytesToArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   const copy = new Uint8Array(bytes.byteLength);

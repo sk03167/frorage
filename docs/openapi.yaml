@@ -1,14 +1,14 @@
 openapi: 3.1.0
 info:
-  title: Private Cloud Storage API
-  version: 0.1.0
-  description: API for opaque encrypted file metadata, storage upload/download sessions, billing usage, and account recovery.
+  title: Frorage API
+  version: 0.2.0
+  description: API for server-managed encrypted storage, file preview/download, password reset, usage, and admin recovery.
 servers:
   - url: http://localhost:8080
 paths:
   /v1/auth/signup:
     post:
-      summary: Create an account with client-wrapped encryption keys.
+      summary: Create an account with a server-managed account master key.
       requestBody:
         required: true
         content:
@@ -24,7 +24,7 @@ paths:
                 $ref: "#/components/schemas/AuthResponse"
   /v1/auth/login:
     post:
-      summary: Authenticate and return wrapped account key material.
+      summary: Authenticate with a client-derived password verifier.
       requestBody:
         required: true
         content:
@@ -38,62 +38,57 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AuthResponse"
-  /v1/uploads/init:
+  /v1/auth/forgot-password:
     post:
-      security:
-        - bearerAuth: []
-      summary: Create a direct encrypted-object upload session.
+      summary: Create a password reset token. MVP returns the token directly for local/manual reset.
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/UploadInitRequest"
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
       responses:
-        "201":
-          description: Upload session created.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/UploadInitResponse"
-  /v1/uploads/{uploadId}/commit:
+        "200":
+          description: Reset token response.
+  /v1/auth/reset-password:
     post:
-      security:
-        - bearerAuth: []
-      parameters:
-        - name: uploadId
-          in: path
-          required: true
-          schema:
-            type: string
+      summary: Reset login credentials without changing file encryption keys.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, passwordVerifier]
+              properties:
+                token:
+                  type: string
+                passwordVerifier:
+                  type: string
       responses:
-        "201":
-          description: File committed.
+        "200":
+          description: Password reset.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/FileRecord"
+                $ref: "#/components/schemas/AuthResponse"
   /v1/files:
     get:
       security:
         - bearerAuth: []
-      summary: List encrypted file and folder records owned by the user.
+      summary: List file and folder records owned by the user.
       responses:
         "200":
-          description: File list.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  files:
-                    type: array
-                    items:
-                      $ref: "#/components/schemas/FileRecord"
+          description: File list with plaintext display metadata.
     post:
       security:
         - bearerAuth: []
-      summary: Create an encrypted folder metadata record.
+      summary: Create a folder.
       requestBody:
         required: true
         content:
@@ -103,89 +98,126 @@ paths:
       responses:
         "201":
           description: Folder created.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/FileRecord"
-  /v1/files/{fileId}:
-    patch:
+  /v1/files/upload:
+    post:
       security:
         - bearerAuth: []
-      summary: Replace encrypted metadata or parent for rename/move.
-      parameters:
-        - name: fileId
-          in: path
-          required: true
-          schema:
-            type: string
+      summary: Upload a plaintext file to the API; the API encrypts before object storage.
       requestBody:
         required: true
         content:
-          application/json:
+          multipart/form-data:
             schema:
-              $ref: "#/components/schemas/UpdateFileRequest"
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                parentId:
+                  type: string
+                  nullable: true
+                name:
+                  type: string
+                mimeType:
+                  type: string
+                lastModified:
+                  type: integer
       responses:
-        "200":
-          description: Updated record.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/FileRecord"
-    delete:
+        "201":
+          description: File uploaded.
+  /v1/files/{fileId}/preview:
+    get:
       security:
         - bearerAuth: []
-      summary: Delete an encrypted file or folder record.
+      summary: Return decrypted bytes for inline preview.
       parameters:
-        - name: fileId
-          in: path
-          required: true
-          schema:
-            type: string
+        - $ref: "#/components/parameters/FileId"
       responses:
-        "204":
-          description: Deleted.
+        "200":
+          description: Plaintext bytes.
   /v1/files/{fileId}/download:
     post:
       security:
         - bearerAuth: []
-      summary: Authorize a direct encrypted-object download.
+      summary: Return decrypted bytes as an attachment.
       parameters:
-        - name: fileId
+        - $ref: "#/components/parameters/FileId"
+      responses:
+        "200":
+          description: Plaintext bytes.
+  /v1/admin/users:
+    get:
+      security:
+        - adminBearerAuth: []
+      summary: Search users by email for admin recovery.
+      parameters:
+        - name: email
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Matching users.
+  /v1/admin/users/{userId}/files:
+    get:
+      security:
+        - adminBearerAuth: []
+      summary: List a user's files for admin recovery.
+      parameters:
+        - name: userId
           in: path
           required: true
           schema:
             type: string
       responses:
         "200":
-          description: Download URL.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  downloadUrl:
-                    type: string
-                  expiresAt:
-                    type: string
-                    format: date-time
+          description: File list.
+  /v1/admin/files/{fileId}/preview:
+    get:
+      security:
+        - adminBearerAuth: []
+      summary: Return decrypted bytes for admin preview.
+      parameters:
+        - $ref: "#/components/parameters/FileId"
+      responses:
+        "200":
+          description: Plaintext bytes.
+  /v1/admin/files/{fileId}/download:
+    post:
+      security:
+        - adminBearerAuth: []
+      summary: Return decrypted bytes for admin recovery download.
+      parameters:
+        - $ref: "#/components/parameters/FileId"
+      responses:
+        "200":
+          description: Plaintext bytes.
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
+    adminBearerAuth:
+      type: http
+      scheme: bearer
+  parameters:
+    FileId:
+      name: fileId
+      in: path
+      required: true
+      schema:
+        type: string
   schemas:
     SignupRequest:
       type: object
-      required: [email, passwordVerifier, keyBundle]
+      required: [email, passwordVerifier]
       properties:
         email:
           type: string
           format: email
         passwordVerifier:
           type: string
-          description: Client-derived auth verifier; not the user's plaintext password.
-        keyBundle:
-          $ref: "#/components/schemas/KeyBundle"
     LoginRequest:
       type: object
       required: [email, passwordVerifier]
@@ -196,7 +228,7 @@ components:
           type: string
     AuthResponse:
       type: object
-      required: [token, user, keyBundle]
+      required: [token, user]
       properties:
         token:
           type: string
@@ -207,60 +239,14 @@ components:
               type: string
             email:
               type: string
-        keyBundle:
-          $ref: "#/components/schemas/KeyBundle"
-    KeyBundle:
-      type: object
-      required: [passwordWrappedMasterKey, passwordKdfSalt, recoveryPhraseWrappedMasterKey, recoveryFileWrappedMasterKey]
-      properties:
-        passwordWrappedMasterKey:
-          type: string
-        passwordKdfSalt:
-          type: string
-        recoveryPhraseWrappedMasterKey:
-          type: string
-        recoveryFileWrappedMasterKey:
-          type: string
-    UploadInitRequest:
-      type: object
-      required: [encryptedMetadata, ciphertextSize]
-      properties:
-        parentId:
-          type: string
-          nullable: true
-        encryptedMetadata:
-          type: string
-        ciphertextSize:
-          type: integer
-          minimum: 0
-    UploadInitResponse:
-      type: object
-      properties:
-        uploadId:
-          type: string
-        objectKey:
-          type: string
-        uploadUrl:
-          type: string
-        expiresAt:
-          type: string
-          format: date-time
     CreateFolderRequest:
       type: object
-      required: [encryptedMetadata]
+      required: [name]
       properties:
         parentId:
           type: string
           nullable: true
-        encryptedMetadata:
-          type: string
-    UpdateFileRequest:
-      type: object
-      properties:
-        parentId:
-          type: string
-          nullable: true
-        encryptedMetadata:
+        name:
           type: string
     FileRecord:
       type: object
@@ -273,10 +259,9 @@ components:
         parentId:
           type: string
           nullable: true
-        encryptedMetadata:
+        name:
+          type: string
+        mimeType:
           type: string
         ciphertextSize:
           type: integer
-        objectKey:
-          type: string
-          nullable: true

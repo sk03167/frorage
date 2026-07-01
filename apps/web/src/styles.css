@@ -133,6 +133,37 @@ input[type="checkbox"] {
   width: min(420px, 100%);
 }
 
+.preview-modal {
+  max-width: min(1100px, 96vw);
+  width: min(1100px, 96vw);
+}
+
+.preview-header {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.preview-header h2 {
+  overflow-wrap: anywhere;
+}
+
+.preview-media,
+.preview-frame {
+  background: #101915;
+  border: 0;
+  border-radius: 6px;
+  display: block;
+  max-height: 72vh;
+  object-fit: contain;
+  width: 100%;
+}
+
+.preview-frame {
+  height: 72vh;
+}
+
 .modal h2 {
   font-size: 20px;
   margin: 0;
@@ -267,6 +298,55 @@ input[type="checkbox"] {
   display: flex;
   flex-direction: column;
   padding: 28px;
+}
+
+.admin-app {
+  display: grid;
+  gap: 24px;
+  min-height: 100vh;
+  padding: 28px;
+}
+
+.admin-grid {
+  align-items: start;
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(280px, 360px) 1fr;
+}
+
+.admin-panel {
+  background: #fff;
+  border: 1px solid #dfe6e2;
+  border-radius: 8px;
+  display: grid;
+  gap: 14px;
+  padding: 18px;
+}
+
+.admin-panel h2 {
+  font-size: 18px;
+  margin: 0;
+}
+
+.admin-panel label {
+  color: #43514a;
+  display: grid;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.admin-list {
+  display: grid;
+  gap: 8px;
+}
+
+.admin-table .row {
+  grid-template-columns: minmax(220px, 1fr) 100px 140px 260px;
+}
+
+.text-link {
+  color: #10271f;
+  font-weight: 700;
 }
 
 .topbar,
