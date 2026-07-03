@@ -94,7 +94,7 @@ function App() {
     }
   }
 
-  async function signup(event: React.FormEvent) {
+  async function signup(event: React.SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     setStatus("Creating encrypted account...");
     try {
@@ -121,7 +121,7 @@ function App() {
     }
   }
 
-  async function loginWithPassword(event: React.FormEvent) {
+  async function loginWithPassword(event: React.SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     setStatus("Checking credentials...");
     try {
@@ -160,7 +160,7 @@ function App() {
     setSignupOpen(true);
   }
 
-  async function createFolder(event: React.FormEvent) {
+  async function createFolder(event: React.SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!token) return;
     if (!folderName.trim()) {

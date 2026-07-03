@@ -25,7 +25,7 @@ function AdminApp() {
     });
   }
 
-  async function searchUsers(event: React.FormEvent) {
+  async function searchUsers(event: React.SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     setStatus("Searching users...");
     const nextUsers = await client.adminUsers(emailSearch);
