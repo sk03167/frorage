@@ -9,6 +9,8 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -28,6 +30,8 @@ type Server struct {
 	mux     *http.ServeMux
 }
 
+const adminSessionCookie = "frorage_admin"
+
 func NewServer(cfg config.Config, repo store.Repository, objects objectstore.ObjectStore) *Server {
 	server := &Server{cfg: cfg, repo: repo, objects: objects, mux: http.NewServeMux()}
 	server.mount()
@@ -42,6 +46,11 @@ func (s *Server) mount() {
 	s.mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
+	s.mux.HandleFunc("GET /admin", s.adminIndex)
+	s.mux.HandleFunc("GET /admin/", s.adminIndex)
+	s.mux.HandleFunc("GET /admin/login", s.adminLoginForm)
+	s.mux.HandleFunc("POST /admin/login", s.adminLogin)
+	s.mux.HandleFunc("GET /admin/assets/", s.adminAsset)
 	s.mux.HandleFunc("POST /v1/auth/signup", s.signup)
 	s.mux.HandleFunc("POST /v1/auth/login", s.login)
 	s.mux.HandleFunc("POST /v1/auth/forgot-password", s.forgotPassword)
@@ -573,6 +582,102 @@ func (s *Server) usage(w http.ResponseWriter, _ *http.Request, user store.User) 
 	})
 }
 
+func (s *Server) adminLoginForm(w http.ResponseWriter, r *http.Request) {
+	if s.hasAdminSession(r) {
+		http.Redirect(w, r, "/admin/", http.StatusSeeOther)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.WriteString(w, `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Frorage Admin Login</title>
+    <style>
+      body { background: #f6f8f5; color: #17211d; font-family: Inter, system-ui, sans-serif; margin: 0; min-height: 100vh; display: grid; place-items: center; }
+      form { background: #fff; border: 1px solid #dfe6e2; border-radius: 8px; display: grid; gap: 14px; padding: 24px; width: min(420px, calc(100vw - 32px)); }
+      h1 { font-size: 22px; margin: 0; }
+      label { color: #43514a; display: grid; gap: 6px; font-size: 14px; }
+      input { border: 1px solid #c9d4cf; border-radius: 6px; font: inherit; min-height: 40px; padding: 0 12px; }
+      button { background: #10271f; border: 1px solid #10271f; border-radius: 6px; color: #fff; cursor: pointer; font: inherit; min-height: 40px; }
+    </style>
+  </head>
+  <body>
+    <form method="post" action="/admin/login">
+      <h1>Frorage Admin</h1>
+      <label>
+        Admin token
+        <input name="token" type="password" required autofocus />
+      </label>
+      <button type="submit">Log in</button>
+    </form>
+  </body>
+</html>`)
+}
+
+func (s *Server) adminLogin(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid form")
+		return
+	}
+	if r.FormValue("token") != s.cfg.AdminToken {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = io.WriteString(w, `<!doctype html><p>Invalid admin token. <a href="/admin/login">Try again</a>.</p>`)
+		return
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     adminSessionCookie,
+		Value:    auth.SignToken("admin", s.cfg.TokenSecret, 12*time.Hour),
+		Path:     "/admin",
+		HttpOnly: true,
+		SameSite: http.SameSiteStrictMode,
+		MaxAge:   int((12 * time.Hour).Seconds()),
+	})
+	http.Redirect(w, r, "/admin/", http.StatusSeeOther)
+}
+
+func (s *Server) adminIndex(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/admin" {
+		http.Redirect(w, r, "/admin/", http.StatusMovedPermanently)
+		return
+	}
+	if !s.hasAdminSession(r) {
+		http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
+		return
+	}
+	http.ServeFile(w, r, filepath.Join(s.cfg.AdminWebDist, "admin.html"))
+}
+
+func (s *Server) adminAsset(w http.ResponseWriter, r *http.Request) {
+	if !s.hasAdminSession(r) {
+		writeError(w, http.StatusUnauthorized, "admin login required")
+		return
+	}
+	name := strings.TrimPrefix(r.URL.Path, "/admin/assets/")
+	if name == "" || strings.Contains(name, "..") {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	path := filepath.Join(s.cfg.AdminWebDist, "assets", filepath.Clean(name))
+	if _, err := os.Stat(path); err != nil {
+		writeError(w, http.StatusNotFound, "not found")
+		return
+	}
+	http.ServeFile(w, r, path)
+}
+
+func (s *Server) hasAdminSession(r *http.Request) bool {
+	cookie, err := r.Cookie(adminSessionCookie)
+	if err != nil || cookie.Value == "" {
+		return false
+	}
+	subject, err := auth.VerifyToken(cookie.Value, s.cfg.TokenSecret)
+	return err == nil && subject == "admin"
+}
+
 type authHandler func(http.ResponseWriter, *http.Request, store.User)
 type adminHandler func(http.ResponseWriter, *http.Request)
 
@@ -602,7 +707,8 @@ func (s *Server) requireAdmin(next adminHandler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		header := r.Header.Get("Authorization")
 		token := strings.TrimPrefix(header, "Bearer ")
-		if token == header || token == "" || token != s.cfg.AdminToken {
+		hasBearer := token != header && token != "" && token == s.cfg.AdminToken
+		if !hasBearer && !s.hasAdminSession(r) {
 			writeError(w, http.StatusUnauthorized, "invalid admin token")
 			return
 		}

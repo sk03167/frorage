@@ -38,7 +38,8 @@ V1 scope:
 - `apps/api/internal/objectstore` - object-storage abstraction, S3-compatible implementation, and memory test store.
 - `packages/sdk/src/api.ts` - browser/client API wrapper.
 - `packages/sdk/src/crypto.ts` - password verifier helper.
-- `apps/web/src/main.tsx` - React app plus `/admin` recovery page.
+- `apps/web/src/main.tsx` - public user React app.
+- `apps/web/src/admin.tsx` and `apps/web/admin.html` - separate admin recovery frontend served by the API after admin login.
 
 ## Current Run Modes
 
@@ -58,13 +59,13 @@ npm run dev:web
 
 Uploads require an S3-compatible object store at the configured endpoint. Without Docker, install/run MinIO locally or point the API at a real S3-compatible bucket.
 
-Admin recovery page:
+Admin recovery page is served by the API, not the public Vite dev server:
 
 ```text
-http://localhost:5173/admin
+http://localhost:8080/admin
 ```
 
-Use `ADMIN_TOKEN` from the API environment.
+Build the web assets before using the API-served admin page. Use `ADMIN_TOKEN` from the API environment to log in.
 
 ## Verification Commands
 

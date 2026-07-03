@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -95,6 +96,45 @@ func TestServerEncryptsUploadedBytesAndDecryptsDownload(t *testing.T) {
 	}
 	if rec.Body.String() != "secret file" {
 		t.Fatalf("expected decrypted file, got %q", rec.Body.String())
+	}
+}
+
+func TestAdminLoginCookieAuthorizesAdminAPI(t *testing.T) {
+	api := NewServer(config.Config{
+		TokenSecret:               "secret",
+		AdminToken:                "admin-token",
+		MasterKeyEncryptionSecret: "master",
+		DefaultQuotaGB:            1,
+		UploadTTL:                 time.Minute,
+		DownloadTTL:               time.Minute,
+	}, store.NewMemoryRepository(), objectstore.NewMemoryStore())
+
+	req := httptest.NewRequest(http.MethodPost, "/admin/login", strings.NewReader("token=wrong"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	api.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rec.Code)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/admin/login", strings.NewReader("token=admin-token"))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec = httptest.NewRecorder()
+	api.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303, got %d", rec.Code)
+	}
+	cookies := rec.Result().Cookies()
+	if len(cookies) == 0 {
+		t.Fatal("expected admin session cookie")
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/v1/admin/users?email=user@example.com", nil)
+	req.AddCookie(cookies[0])
+	rec = httptest.NewRecorder()
+	api.Routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 
